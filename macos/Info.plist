@@ -26,6 +26,8 @@
     <string>5.1.1</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Rodger Wilson. GNU GPL v3 or later.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

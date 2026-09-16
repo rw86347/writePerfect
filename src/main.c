@@ -1,3 +1,20 @@
+/* WritePerfect — WordPerfect 5.1 compatible word processor
+ * Copyright (C) 2026 Rodger Wilson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include "agent.h"
 #include "cmd.h"
 #include "doc.h"
@@ -28,6 +45,8 @@ static void die_restore(int sig)
 
 static void usage(const char *argv0)
 {
+    fprintf(stderr, "WritePerfect  Copyright (C) 2026  Rodger Wilson\n");
+    fprintf(stderr, "This program comes with ABSOLUTELY NO WARRANTY. GNU GPL v3 or later.\n");
     fprintf(stderr, "Usage: %s [--gui|--tui] [--agent [port]] [--script commands.txt] [document.wpd]\n", argv0);
     fprintf(stderr, "  --gui   Mac window, menu bar, titlebar F-keys, Touch Bar.\n");
     fprintf(stderr, "  --tui   Terminal (default when run from a shell).\n");

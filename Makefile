@@ -1,3 +1,7 @@
+# WritePerfect
+# Copyright (C) 2026 Rodger Wilson
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 CC = clang
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2 -Isrc
 NCURSES = -lncurses
