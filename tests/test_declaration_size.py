@@ -129,12 +129,12 @@ def main():
     must(raw[:4] == b"\xffWPC", "Declaration.wpd not WPD")
     doc = raw[16:]
     i = doc.find(b"<<SZ>>")
-    must(i >= 2, "SZ marker missing in wpd")
-    must(doc[i - 2 : i] == bytes([0xC3, 2]), "SZ should be preceded by [LARGE] only")
-    must(doc[i - 4 : i] != bytes([0xC3, 4, 0xC3, 2]), "Fine+Large stacked before SZ")
+    must(i >= 3, "SZ marker missing in wpd")
+    must(doc[i - 3 : i] == bytes([0xC3, 2, 0xC3]), "SZ should be preceded by official [LARGE] only")
+    must(doc[i - 6 : i] != bytes([0xC3, 4, 0xC3, 0xC3, 2, 0xC3]), "Fine+Large stacked before SZ")
     j = doc.find(b"<<NM>>")
     must(j > i, "NM marker missing in wpd")
-    must(doc[j - 2 : j] == bytes([0xC4, 2]), "NM should follow [large] off")
+    must(doc[j - 3 : j] == bytes([0xC4, 2, 0xC4]), "NM should follow official [large] off")
 
     with open(md_out, "r", encoding="utf-8") as f:
         md = f.read()

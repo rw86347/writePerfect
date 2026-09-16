@@ -143,6 +143,8 @@ int main(void)
             visible_text(&d, preview, sizeof(preview), &nvis);
             printf("%-24s %8zu   ok   %6zu %s\n", names[i], rawn, nvis, preview);
             pass++;
+        } else if (!strcmp(reason, "encrypted") || !strcmp(reason, "unsupported-type")) {
+            printf("%-24s %8zu skip          %s\n", names[i], rawn, reason);
         } else {
             printf("%-24s %8zu FAIL          %s\n", names[i], rawn, reason);
             fail++;

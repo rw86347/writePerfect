@@ -175,12 +175,12 @@ def main():
         print("FAIL: saved payload unexpected", file=sys.stderr)
         print(data, file=sys.stderr)
         return 1
-    if b"\xc3\x0cBold\xc4\x0c" not in data:
-        print("FAIL: bold codes missing in save", file=sys.stderr)
+    if b"\xc3\x0c\xc3Bold\xc4\x0c\xc4" not in data:
+        print("FAIL: official bold codes missing in save", file=sys.stderr)
         print(list(data), file=sys.stderr)
         return 1
-    if b"\xc3\x0eUnd\xc4\x0e" not in data:
-        print("FAIL: underline codes missing in save", file=sys.stderr)
+    if b"\xc3\x0e\xc3Und\xc4\x0e\xc4" not in data:
+        print("FAIL: official underline codes missing in save", file=sys.stderr)
         print(list(data), file=sys.stderr)
         return 1
 

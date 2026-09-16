@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 import sys
 
-JUST, FULL = 0xC8, 3
 with open("tests/out/just.wpd", "rb") as f:
     data = f.read()
 if data[:4] != b"\xffWPC":
     print("FAIL: not a WPD", file=sys.stderr)
     sys.exit(1)
+if data[8] != 1 or data[9] != 0x0A:
+    print("FAIL: not WP 5.1 document header", data[8:12], file=sys.stderr)
+    sys.exit(1)
 doc = data[16:]
-if doc[:2] != bytes([JUST, FULL]):
-    print("FAIL: missing [Just:Full] at start", doc[:12], file=sys.stderr)
+if b"\xc8" in doc:
+    print("FAIL: private C8 just code is not WP 5.1-safe", file=sys.stderr)
     sys.exit(1)
 if b"When in the Course" not in doc:
     print("FAIL: missing text", file=sys.stderr)

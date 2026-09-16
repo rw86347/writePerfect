@@ -26,6 +26,7 @@
 #define WP_INDENT 0xC2
 #define WP_ATTR_ON 0xC3
 #define WP_ATTR_OFF 0xC4
+/* Official WP 5.1: C3 nn C3 / C4 nn C4. We write that; we still read 2-byte. */
 #define WP_CENTER 0xC5
 #define WP_UTF8 0xC6 /* C6, nbytes, utf8[nbytes] */
 #define WP_FONT 0xC7 /* C7, family, size_pt */

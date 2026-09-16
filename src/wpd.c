@@ -4,6 +4,81 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int official_append(uint8_t **p, size_t *n, size_t *cap, const uint8_t *src, size_t add)
+{
+    uint8_t *q;
+    if (!add) {
+        return 0;
+    }
+    if (*n + add > *cap) {
+        size_t c = *cap ? *cap : 256;
+        while (c < *n + add) {
+            c *= 2;
+        }
+        q = realloc(*p, c);
+        if (!q) {
+            return -1;
+        }
+        *p = q;
+        *cap = c;
+    }
+    memcpy(*p + *n, src, add);
+    *n += add;
+    return 0;
+}
+
+/* Bytes old WordPerfect 5.1 can read. Private C6/C7/C8 stay in memory only. */
+static int official_body(const Doc *d, uint8_t **out, size_t *out_n)
+{
+    uint8_t *body = NULL;
+    size_t n = 0, cap = 0, i = 0;
+    *out = NULL;
+    *out_n = 0;
+    while (i < d->len) {
+        size_t u = doc_unit_len(d, i);
+        uint8_t b;
+        if (!u) {
+            break;
+        }
+        b = d->data[i];
+        if ((b == WP_ATTR_ON || b == WP_ATTR_OFF) && u >= 2) {
+            uint8_t trip[3];
+            trip[0] = b;
+            trip[1] = d->data[i + 1];
+            trip[2] = b;
+            if (official_append(&body, &n, &cap, trip, 3) != 0) {
+                free(body);
+                return -1;
+            }
+        } else if (b == WP_UTF8) {
+            uint32_t cp = doc_display_cp(d, i);
+            uint8_t c;
+            if (cp >= 32 && cp < 127) {
+                c = (uint8_t)cp;
+            } else if (cp == 0x2014 || cp == 0x2013) {
+                c = '-';
+            } else {
+                c = '?';
+            }
+            if (official_append(&body, &n, &cap, &c, 1) != 0) {
+                free(body);
+                return -1;
+            }
+        } else if (b == WP_FONT && u >= 3 && d->data[i + 1] <= WP_FONT_HELVETICA) {
+            /* App-only C7 family size; 5.1 would desync. */
+        } else if (b == WP_JUST && u >= 2 && d->data[i + 1] <= WP_JUST_FULL) {
+            /* App-only C8 mode; 5.1 would desync. */
+        } else if (official_append(&body, &n, &cap, d->data + i, u) != 0) {
+            free(body);
+            return -1;
+        }
+        i += u;
+    }
+    *out = body ? body : calloc(1, 1);
+    *out_n = n;
+    return *out ? 0 : -1;
+}
+
 static void put_u16(uint8_t *p, uint16_t v)
 {
     p[0] = (uint8_t)(v & 0xFF);
@@ -23,9 +98,9 @@ static uint32_t get_u32(const uint8_t *p)
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-uint8_t *wpd_encode(const Doc *d, size_t *out_len)
+static uint8_t *wpd_pack(const uint8_t *body, size_t body_n, size_t *out_len)
 {
-    size_t len = 16 + d->len;
+    size_t len = 16 + body_n;
     uint8_t *buf = malloc(len);
     if (!buf) {
         return NULL;
@@ -41,10 +116,31 @@ uint8_t *wpd_encode(const Doc *d, size_t *out_len)
     buf[11] = WPD_MINOR;
     put_u16(buf + 12, 0);
     put_u16(buf + 14, 0);
-    if (d->len) {
-        memcpy(buf + 16, d->data, d->len);
+    if (body_n) {
+        memcpy(buf + 16, body, body_n);
     }
     *out_len = len;
+    return buf;
+}
+
+uint8_t *wpd_encode_native(const Doc *d, size_t *out_len)
+{
+    if (!d || !out_len) {
+        return NULL;
+    }
+    return wpd_pack(d->data, d->len, out_len);
+}
+
+uint8_t *wpd_encode(const Doc *d, size_t *out_len)
+{
+    uint8_t *body = NULL;
+    size_t body_n = 0;
+    uint8_t *buf;
+    if (!d || official_body(d, &body, &body_n) != 0) {
+        return NULL;
+    }
+    buf = wpd_pack(body, body_n, out_len);
+    free(body);
     return buf;
 }
 

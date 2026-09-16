@@ -124,6 +124,11 @@ int io_path_for_format(const char *path, int fmt, char *out, size_t outsz)
     slash = strrchr(path, '/');
     slash = slash ? slash + 1 : path;
     dot = strrchr(slash, '.');
+    /* Keep .wpd/.wps/.wp/.wkb when saving WordPerfect — old 5.1 opens all of them. */
+    if (fmt == IO_FMT_WPD && io_format_from_path(path) == IO_FMT_WPD) {
+        snprintf(out, outsz, "%s", path);
+        return 0;
+    }
     if (dot && io_format_from_path(path) >= 0) {
         n = (size_t)(dot - path);
         if (n + 8 >= outsz) {
@@ -1838,7 +1843,7 @@ done:
 int io_pdf_append_wpd(const char *path, const Doc *d)
 {
     size_t n = 0;
-    uint8_t *buf = wpd_encode(d, &n);
+    uint8_t *buf = wpd_encode_native(d, &n);
     FILE *f;
     int rc = -1;
     if (!buf) {

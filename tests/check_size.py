@@ -11,9 +11,18 @@ if data[:4] != b"\xffWPC":
     print("FAIL: not a WPD", file=sys.stderr)
     sys.exit(1)
 doc = data[16:]
-want = bytes([ON, LARGE]) + b"A" + bytes([OFF, LARGE]) + b"B" + bytes(
-    [ON, LARGE]
-) + b"C" + bytes([OFF, LARGE, ON, FINE]) + b"D" + bytes([OFF, FINE]) + b"E"
+want = (
+    bytes([ON, LARGE, ON])
+    + b"A"
+    + bytes([OFF, LARGE, OFF])
+    + b"B"
+    + bytes([ON, LARGE, ON])
+    + b"C"
+    + bytes([OFF, LARGE, OFF, ON, FINE, ON])
+    + b"D"
+    + bytes([OFF, FINE, OFF])
+    + b"E"
+)
 if doc != want:
     print("FAIL: wpd size stream", file=sys.stderr)
     print(" got", doc, file=sys.stderr)

@@ -125,6 +125,22 @@ int wp_cp_width(uint32_t cp)
     return 1;
 }
 
+/* Official WP 5.1: C3 nn C3 / C4 nn C4. We write 3-byte pairs; older saves are 2-byte.
+ * C3 0C C3 0E is stacked 2-byte bold+underline, not an official 3-byte ON. */
+static size_t attr_code_len(const uint8_t *p, size_t n)
+{
+    if (n < 2 || (p[0] != WP_ATTR_ON && p[0] != WP_ATTR_OFF)) {
+        return 0;
+    }
+    if (n >= 3 && p[2] == p[0]) {
+        if (n >= 4 && wp_attr_bit(p[3]) != 0) {
+            return 2;
+        }
+        return 3;
+    }
+    return 2;
+}
+
 size_t doc_unit_len(const Doc *d, size_t pos)
 {
     if (pos >= d->len) {
@@ -140,8 +156,8 @@ size_t doc_unit_len(const Doc *d, size_t pos)
     if (b == WP_EXT_CHAR && n >= 3) {
         return 3;
     }
-    if ((b == WP_ATTR_ON || b == WP_ATTR_OFF) && n >= 2) {
-        return 2;
+    if (b == WP_ATTR_ON || b == WP_ATTR_OFF) {
+        return attr_code_len(p, n);
     }
     if (b == WP_FONT && n >= 3) {
         return 3;
@@ -160,9 +176,23 @@ size_t doc_unit_len(const Doc *d, size_t pos)
     }
     if (b >= 0xD0 && b <= 0xEF && n >= 4) {
         size_t sz = (size_t)p[2] | ((size_t)p[3] << 8);
+        if (sz >= 5 && sz <= n && p[sz - 1] == b) {
+            size_t k, letters = 0;
+            for (k = 4; k + 1 < sz; k++) {
+                if (p[k] >= 32 && p[k] < 127) {
+                    letters++;
+                }
+            }
+            /* Center/align wrappers store the line inside the function. */
+            if (letters >= 3) {
+                return 4;
+            }
+            return sz;
+        }
         if (sz >= 4 && sz <= n) {
             return sz;
         }
+        return 1;
     }
     if (b >= 0xF0 && n >= 2) {
         /* Fixed multi-byte groups: skip through matching end gate if present. */
@@ -645,10 +675,11 @@ int doc_insert_hard_return(Doc *d)
 
 static int insert_attr_pair(Doc *d, size_t pos, uint8_t onoff, uint8_t attr)
 {
-    uint8_t pair[2];
+    uint8_t pair[3];
     pair[0] = onoff;
     pair[1] = attr;
-    return doc_insert(d, pos, pair, 2);
+    pair[2] = onoff;
+    return doc_insert(d, pos, pair, 3);
 }
 
 static int is_size_code_at(const Doc *d, size_t pos)
@@ -767,21 +798,22 @@ static int unwrap_attr(Doc *d, uint8_t attr, size_t lo, size_t hi)
         hi = prev;
     }
     if (del_on) {
+        size_t n = doc_unit_len(d, lo);
         if (delete_unit_at(d, lo) != 0) {
             return -1;
         }
-        hi = (hi >= 2) ? hi - 2 : 0;
+        hi = (hi >= n) ? hi - n : 0;
     } else if (insert_attr_pair(d, lo, WP_ATTR_OFF, attr) != 0) {
         return -1;
     } else {
-        hi += 2;
-        lo += 2;
+        hi += 3;
+        lo += 3;
     }
     if (!del_off) {
         if (insert_attr_pair(d, hi, WP_ATTR_ON, attr) != 0) {
             return -1;
         }
-        hi += 2;
+        hi += 3;
     }
     d->cursor = hi;
     d->mark = SIZE_MAX;
@@ -802,7 +834,7 @@ static int wrap_attr(Doc *d, uint8_t attr)
     if (insert_attr_pair(d, lo, WP_ATTR_ON, attr) != 0) {
         return -1;
     }
-    d->cursor = hi + 4;
+    d->cursor = hi + 6;
     d->mark = SIZE_MAX;
     return 0;
 }
@@ -855,7 +887,7 @@ static int wrap_size(Doc *d, uint8_t attr)
         if (insert_attr_pair(d, lo, WP_ATTR_OFF, inherited) != 0) {
             return -1;
         }
-        hi += 2;
+        hi += 3;
         if (insert_attr_pair(d, hi, WP_ATTR_ON, inherited) != 0) {
             return -1;
         }
@@ -866,18 +898,18 @@ static int wrap_size(Doc *d, uint8_t attr)
         if (insert_attr_pair(d, lo, WP_ATTR_OFF, inherited) != 0) {
             return -1;
         }
-        lo += 2;
-        hi += 2;
+        lo += 3;
+        hi += 3;
     }
     if (insert_attr_pair(d, lo, WP_ATTR_ON, attr) != 0) {
         return -1;
     }
-    hi += 2;
+    hi += 3;
     if (insert_attr_pair(d, hi, WP_ATTR_OFF, attr) != 0) {
         return -1;
     }
     if (inherited != 0xFF) {
-        if (insert_attr_pair(d, hi + 2, WP_ATTR_ON, inherited) != 0) {
+        if (insert_attr_pair(d, hi + 3, WP_ATTR_ON, inherited) != 0) {
             return -1;
         }
     }
@@ -922,7 +954,7 @@ int doc_toggle_attr(Doc *d, uint8_t attr)
 {
     unsigned mask = wp_attr_bit(attr);
     unsigned bits;
-    uint8_t pair[2];
+    uint8_t pair[3];
     size_t n;
     if (!mask) {
         return -1;
@@ -942,7 +974,8 @@ int doc_toggle_attr(Doc *d, uint8_t attr)
     bits = doc_attrs_at(d, d->cursor);
     pair[0] = (bits & mask) ? WP_ATTR_OFF : WP_ATTR_ON;
     pair[1] = attr;
-    return doc_insert(d, d->cursor, pair, 2);
+    pair[2] = pair[0];
+    return doc_insert(d, d->cursor, pair, 3);
 }
 
 int doc_insert_font(Doc *d, uint8_t family, uint8_t size_pt)

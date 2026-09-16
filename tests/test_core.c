@@ -80,17 +80,22 @@ static void test_bold_underline(void)
     doc_insert_char(&d, 'U');
     doc_toggle_attr(&d, WP_ATTR_UNDERLINE);
 
-    /* C3 0C 'B' C4 0C C3 0E 'U' C4 0E */
-    expect(d.len == 10, "attr stream length");
-    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_BOLD, "bold on");
-    expect(d.data[2] == 'B', "B");
-    expect(d.data[3] == WP_ATTR_OFF && d.data[4] == WP_ATTR_BOLD, "bold off");
-    expect(d.data[5] == WP_ATTR_ON && d.data[6] == WP_ATTR_UNDERLINE, "und on");
-    expect(d.data[7] == 'U', "U");
-    expect(d.data[8] == WP_ATTR_OFF && d.data[9] == WP_ATTR_UNDERLINE, "und off");
+    /* C3 0C C3 'B' C4 0C C4 C3 0E C3 'U' C4 0E C4 */
+    expect(d.len == 14, "attr stream length");
+    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_BOLD && d.data[2] == WP_ATTR_ON,
+           "bold on");
+    expect(d.data[3] == 'B', "B");
+    expect(d.data[4] == WP_ATTR_OFF && d.data[5] == WP_ATTR_BOLD && d.data[6] == WP_ATTR_OFF,
+           "bold off");
+    expect(d.data[7] == WP_ATTR_ON && d.data[8] == WP_ATTR_UNDERLINE && d.data[9] == WP_ATTR_ON,
+           "und on");
+    expect(d.data[10] == 'U', "U");
+    expect(d.data[11] == WP_ATTR_OFF && d.data[12] == WP_ATTR_UNDERLINE &&
+               d.data[13] == WP_ATTR_OFF,
+           "und off");
     expect(doc_attrs_at(&d, 3) & ATTR_BIT_BOLD, "bold at B");
-    expect(!(doc_attrs_at(&d, 5) & ATTR_BIT_BOLD), "not bold after off");
-    expect(doc_attrs_at(&d, 8) & ATTR_BIT_UNDERLINE, "underline at U");
+    expect(!(doc_attrs_at(&d, 7) & ATTR_BIT_BOLD), "not bold after off");
+    expect(doc_attrs_at(&d, 10) & ATTR_BIT_UNDERLINE, "underline at U");
 
     size_t n = 0;
     uint8_t *buf = wpd_encode(&d, &n);
@@ -178,6 +183,109 @@ static void test_mac_wpd(void)
         }
         expect(found, "algeria3 text Jaghbub");
     }
+    doc_free(&d);
+}
+
+static int doc_has_visible(const Doc *d, const char *s)
+{
+    char buf[4096];
+    size_t o = 0, i = 0;
+    size_t slen = strlen(s);
+    buf[0] = 0;
+    while (i < d->len && o + 1 < sizeof(buf)) {
+        size_t n = doc_unit_len(d, i);
+        if (!n) {
+            break;
+        }
+        if (doc_is_visible(d, i)) {
+            uint8_t b = d->data[i];
+            if (b >= 32 && b < 127) {
+                buf[o++] = (char)b;
+            }
+        }
+        i += n;
+    }
+    buf[o] = 0;
+    return slen && strstr(buf, s) != NULL;
+}
+
+static void test_wp51_attr_pair(void)
+{
+    Doc d;
+    /* Official WP 5.1: C3 0C C3 From: C4 0C C4 */
+    static const uint8_t official[] = {
+        WP_ATTR_ON, WP_ATTR_BOLD, WP_ATTR_ON,
+        'F', 'r', 'o', 'm', ':',
+        WP_ATTR_OFF, WP_ATTR_BOLD, WP_ATTR_OFF
+    };
+    doc_init(&d);
+    expect(doc_insert(&d, 0, official, sizeof(official)) == 0, "insert official attrs");
+    expect(doc_unit_len(&d, 0) == 3, "official ON is 3 bytes");
+    expect(doc_unit_len(&d, 8) == 3, "official OFF is 3 bytes");
+    expect(d.data[3] == 'F', "F not eaten");
+    expect(doc_has_visible(&d, "From:"), "official From: visible");
+    expect(doc_attrs_at(&d, 3) & ATTR_BIT_BOLD, "official bold on F");
+    expect((doc_attrs_at(&d, d.len) & ATTR_BIT_BOLD) == 0, "official bold off after");
+    doc_free(&d);
+
+    /* We write official 3-byte ON. Older 2-byte files still apply. */
+    doc_init(&d);
+    doc_toggle_attr(&d, WP_ATTR_BOLD);
+    expect(d.len == 3 && d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_BOLD &&
+               d.data[2] == WP_ATTR_ON,
+           "we write official 3-byte ON");
+    expect(doc_unit_len(&d, 0) == 3, "our ON is 3 bytes");
+    doc_insert_char(&d, 'X');
+    expect(doc_attrs_at(&d, 3) & ATTR_BIT_BOLD, "3-byte bold applies");
+    doc_free(&d);
+
+    doc_init(&d);
+    {
+        static const uint8_t old2[] = { WP_ATTR_ON, WP_ATTR_BOLD };
+        size_t n = 0;
+        uint8_t *buf;
+        expect(doc_insert(&d, 0, old2, sizeof(old2)) == 0, "insert old 2-byte ON");
+        expect(doc_unit_len(&d, 0) == 2, "old ON is 2 bytes");
+        doc_insert_char(&d, 'X');
+        expect(doc_attrs_at(&d, 2) & ATTR_BIT_BOLD, "2-byte bold still applies");
+        buf = wpd_encode(&d, &n);
+        expect(buf && n >= 20, "encode old 2-byte");
+        expect(buf[8] == 1 && buf[9] == 0x0A && buf[10] == 0 && buf[11] == 1,
+               "saved header is WP 5.1 document");
+        expect(n >= 20 && buf[16] == WP_ATTR_ON && buf[17] == WP_ATTR_BOLD &&
+                   buf[18] == WP_ATTR_ON && buf[19] == 'X',
+               "save upgrades 2-byte ON to official 3-byte");
+        free(buf);
+    }
+    doc_free(&d);
+
+    doc_init(&d);
+    expect(doc_insert_just(&d, WP_JUST_FULL) == 0, "just for official save");
+    expect(doc_insert_font(&d, WP_FONT_TIMES, 12) == 0, "font for official save");
+    doc_insert_char(&d, 'Q');
+    {
+        size_t n = 0, i;
+        uint8_t *buf = wpd_encode(&d, &n);
+        int private = 0;
+        expect(buf && n > 16 && buf[0] == 0xFF && buf[1] == 'W' && buf[2] == 'P' && buf[3] == 'C',
+               "official magic");
+        expect(buf[8] == 1 && buf[9] == 0x0A, "product 1 type document");
+        for (i = 16; i < n; i++) {
+            if (buf[i] == WP_UTF8 || buf[i] == WP_FONT || buf[i] == WP_JUST) {
+                private = 1;
+            }
+        }
+        expect(!private, "save omits C6/C7/C8 so WP 5.1 can open it");
+        expect(n > 16 && buf[n - 1] == 'Q', "text survives official save");
+        free(buf);
+    }
+    doc_free(&d);
+
+    doc_init(&d);
+    expect(wpd_load(&d, "tests/corpus/memo.wpd") == 0, "load LEARN memo.wpd");
+    expect(doc_has_visible(&d, "From:"), "memo From:");
+    expect(doc_has_visible(&d, "Date:"), "memo Date:");
+    expect(doc_has_visible(&d, "Subject:"), "memo Subject:");
     doc_free(&d);
 }
 
@@ -427,8 +535,8 @@ static void test_export_and_wrap(void)
         expect(io_format_from_path("/tmp/LETTER.WPS") == IO_FMT_WPD, "WPS case");
         expect(io_format_from_path("/tmp/memo.wp") == IO_FMT_WPD, "wp is wp document");
         expect(io_path_for_format("/tmp/letter.wps", IO_FMT_WPD, out, sizeof(out)) == 0,
-               "rewrite wps");
-        expect(strcmp(out, "/tmp/letter.wpd") == 0, "wps stem becomes wpd");
+               "keep wps");
+        expect(strcmp(out, "/tmp/letter.wps") == 0, "wps stays wps for WP save");
     }
 }
 
@@ -653,8 +761,9 @@ static void test_fonts(void)
     doc_init(&d);
     doc_toggle_attr(&d, WP_ATTR_LARGE);
     doc_toggle_attr(&d, WP_ATTR_FINE);
-    expect(d.len == 2, "wrong size then wanted size replaces, does not stack");
-    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_FINE, "pending size is Fine");
+    expect(d.len == 3, "wrong size then wanted size replaces, does not stack");
+    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_FINE && d.data[2] == WP_ATTR_ON,
+           "pending size is Fine");
     expect(!(doc_attrs_at(&d, d.cursor) & ATTR_BIT_LARGE), "Large did not remain");
     expect((doc_attrs_at(&d, d.cursor) & ATTR_BIT_FINE) != 0, "Fine is on");
     doc_normal_size(&d);
@@ -663,13 +772,17 @@ static void test_fonts(void)
     doc_toggle_attr(&d, WP_ATTR_LARGE);
     doc_insert_utf8(&d, "Hi");
     doc_toggle_attr(&d, WP_ATTR_FINE);
-    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_LARGE, "Large stays around typed text");
-    expect(d.data[2] == 'H' && d.data[3] == 'i', "Hi after Large");
-    expect(d.data[4] == WP_ATTR_OFF && d.data[5] == WP_ATTR_LARGE, "Large off after Hi");
-    expect(d.data[6] == WP_ATTR_ON && d.data[7] == WP_ATTR_FINE, "Fine on after replace");
+    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_LARGE && d.data[2] == WP_ATTR_ON,
+           "Large stays around typed text");
+    expect(d.data[3] == 'H' && d.data[4] == 'i', "Hi after Large");
+    expect(d.data[5] == WP_ATTR_OFF && d.data[6] == WP_ATTR_LARGE && d.data[7] == WP_ATTR_OFF,
+           "Large off after Hi");
+    expect(d.data[8] == WP_ATTR_ON && d.data[9] == WP_ATTR_FINE && d.data[10] == WP_ATTR_ON,
+           "Fine on after replace");
     doc_insert_utf8(&d, "Z");
     doc_normal_size(&d);
-    expect(d.data[d.len - 2] == WP_ATTR_OFF && d.data[d.len - 1] == WP_ATTR_FINE,
+    expect(d.data[d.len - 3] == WP_ATTR_OFF && d.data[d.len - 2] == WP_ATTR_FINE &&
+               d.data[d.len - 1] == WP_ATTR_OFF,
            "Normal size closes Fine");
     expect(doc_attrs_at(&d, d.cursor) == 0, "cursor normal after size Normal");
     doc_toggle_attr(&d, WP_ATTR_ITALIC);
@@ -683,13 +796,15 @@ static void test_fonts(void)
     d.mark = 0;
     d.cursor = 2;
     doc_toggle_attr(&d, WP_ATTR_LARGE);
-    d.mark = 2;
-    d.cursor = 4;
+    d.mark = 3;
+    d.cursor = 5;
     doc_toggle_attr(&d, WP_ATTR_FINE);
-    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_FINE, "sel size replace starts Fine");
-    expect(d.data[2] == 'a' && d.data[3] == 'b', "sel text kept");
-    expect(d.data[4] == WP_ATTR_OFF && d.data[5] == WP_ATTR_FINE, "sel size replace ends Fine");
-    expect(d.len == 6, "sel size replace is one pair");
+    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_FINE && d.data[2] == WP_ATTR_ON,
+           "sel size replace starts Fine");
+    expect(d.data[3] == 'a' && d.data[4] == 'b', "sel text kept");
+    expect(d.data[5] == WP_ATTR_OFF && d.data[6] == WP_ATTR_FINE && d.data[7] == WP_ATTR_OFF,
+           "sel size replace ends Fine");
+    expect(d.len == 8, "sel size replace is one pair");
     doc_free(&d);
 }
 
@@ -703,28 +818,30 @@ static void test_reveal_unbold(void)
     doc_toggle_attr(&d, WP_ATTR_BOLD);
     doc_toggle_attr(&d, WP_ATTR_UNDERLINE);
     doc_insert_utf8(&d, "Hi");
-    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_BOLD, "starts with [BOLD]");
-    expect(d.data[2] == WP_ATTR_ON && d.data[3] == WP_ATTR_UNDERLINE, "then [UND]");
-    d.cursor = 4; /* on 'H' */
+    expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_BOLD && d.data[2] == WP_ATTR_ON,
+           "starts with [BOLD]");
+    expect(d.data[3] == WP_ATTR_ON && d.data[4] == WP_ATTR_UNDERLINE && d.data[5] == WP_ATTR_ON,
+           "then [UND]");
+    d.cursor = 6; /* on 'H' */
     doc_move_left(&d, 0);
     expect(d.cursor == 0, "reveal-off left skips hidden codes");
-    d.cursor = 4;
+    d.cursor = 6;
     doc_move_left(&d, 1);
-    expect(d.cursor == 2 && d.data[2] == WP_ATTR_ON && d.data[3] == WP_ATTR_UNDERLINE,
+    expect(d.cursor == 3 && d.data[3] == WP_ATTR_ON && d.data[4] == WP_ATTR_UNDERLINE,
            "reveal-on left lands on [UND]");
     doc_move_left(&d, 1);
     expect(d.cursor == 0 && d.data[0] == WP_ATTR_ON, "next left is [BOLD]");
     expect(doc_delete_forward(&d, 1) == 0, "delete [BOLD]");
     expect(d.data[0] == WP_ATTR_ON && d.data[1] == WP_ATTR_UNDERLINE, "UND remains");
-    expect(!(doc_attrs_at(&d, 2) & ATTR_BIT_BOLD), "H not bold after delete ON");
-    expect((doc_attrs_at(&d, 2) & ATTR_BIT_UNDERLINE) != 0, "H still underlined");
+    expect(!(doc_attrs_at(&d, 3) & ATTR_BIT_BOLD), "H not bold after delete ON");
+    expect((doc_attrs_at(&d, 3) & ATTR_BIT_UNDERLINE) != 0, "H still underlined");
     doc_free(&d);
 
     doc_init(&d);
     doc_toggle_attr(&d, WP_ATTR_BOLD);
     doc_insert_utf8(&d, "Hi");
     doc_toggle_attr(&d, WP_ATTR_BOLD);
-    d.cursor = 2;
+    d.cursor = 3;
     expect(doc_backspace(&d, 1) == 0, "reveal backspace deletes [BOLD]");
     expect(d.data[0] == 'H', "backspace removed ON");
     doc_free(&d);
@@ -862,6 +979,7 @@ int main(void)
     test_file_roundtrip();
     test_reject_bad();
     test_mac_wpd();
+    test_wp51_attr_pair();
     test_search_indent_merge_center();
     test_utf8_and_specials();
     test_export_and_wrap();

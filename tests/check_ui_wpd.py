@@ -12,11 +12,11 @@ if data[8] != 1 or data[9] != 0x0A or data[10] != 0 or data[11] != 1:
 if b"Hello" not in data:
     print("FAIL: missing Hello", file=sys.stderr)
     sys.exit(1)
-if b"\xc3\x0cBold\xc4\x0c" not in data:
-    print("FAIL: missing bold codes", list(data), file=sys.stderr)
+if b"\xc3\x0c\xc3Bold\xc4\x0c\xc4" not in data:
+    print("FAIL: missing official bold codes", list(data), file=sys.stderr)
     sys.exit(1)
-if b"\xc3\x0eUnd\xc4\x0e" not in data:
-    print("FAIL: missing underline codes", list(data), file=sys.stderr)
+if b"\xc3\x0e\xc3Und\xc4\x0e\xc4" not in data:
+    print("FAIL: missing official underline codes", list(data), file=sys.stderr)
     sys.exit(1)
 if data[-1] != 0x0A:
     print("FAIL: expected hard return at end", file=sys.stderr)
