@@ -1,0 +1,16 @@
+# First-slice flow: type, bold, underline, reveal, list, save, exit
+type Hello 
+f6
+type Bold
+f6
+type  
+f8
+type Und
+f8
+enter
+f11
+f5
+f1
+f10
+input tests/out/ui.wpd
+f7

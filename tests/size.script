@@ -1,0 +1,18 @@
+fine
+large
+type A
+normsize
+type B
+large
+type C
+fine
+type D
+normsize
+type E
+f10
+ctrl-u
+input tests/out/size.wpd
+f10
+ctrl-u
+input tests/out/size.md
+f7

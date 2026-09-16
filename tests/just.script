@@ -1,0 +1,11 @@
+just-full
+type When in the Course of human events, it becomes necessary for one people to dissolve the political bands which have connected them with another.
+enter
+type The unanimous Declaration of the thirteen united States of America.
+f10
+ctrl-u
+input tests/out/just.wpd
+f10
+ctrl-u
+input tests/out/just.md
+f7

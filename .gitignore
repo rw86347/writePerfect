@@ -1,0 +1,7 @@
+/wp
+/test
+/src/*.o
+/tests/test_core
+/tests/out/
+/WordPerfect.app/
+.DS_Store

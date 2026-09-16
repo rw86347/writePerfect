@@ -1,0 +1,12 @@
+font
+type 4
+type 3
+type Hello
+font
+type 1
+type 3
+type  World
+f11
+f10
+input tests/out/font.wpd
+f7
