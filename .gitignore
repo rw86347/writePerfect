@@ -2,6 +2,8 @@
 /test
 /src/*.o
 /tests/test_core
+/tests/test_corpus
+/tests/corpus-results.txt
 /tests/out/
 /WordPerfect.app/
 .DS_Store

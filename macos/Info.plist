@@ -23,13 +23,15 @@
     <key>CFBundleShortVersionString</key>
     <string>5.1</string>
     <key>CFBundleVersion</key>
-    <string>5.1</string>
+    <string>5.1.1</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -41,6 +43,44 @@
             <string>WordPerfect 5.1 Document</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
+            <key>CFBundleTypeIconFile</key>
+            <string>AppIcon</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>NSDocumentClass</key>
+            <string>WPDocument</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>uk.wp51.document</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>uk.wp51.document</string>
+            <key>UTTypeDescription</key>
+            <string>WordPerfect 5.1 Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeIconFile</key>
+            <string>AppIcon</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>wpd</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/vnd.wordperfect</string>
+                    <string>application/wordperfect</string>
+                </array>
+            </dict>
         </dict>
     </array>
 </dict>

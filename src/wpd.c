@@ -54,11 +54,17 @@ int wpd_decode(Doc *d, const uint8_t *buf, size_t len)
         return -1;
     }
     uint32_t docptr = get_u32(buf + 4);
+    uint16_t enc;
     if (docptr < 16 || docptr > len) {
         return -1;
     }
-    /* Only accept WordPerfect documents (product 1, type 0x0A). */
-    if (buf[8] != WPD_PRODUCT || buf[9] != WPD_TYPE_DOC) {
+    /* DOS/Windows 5.x document, or Macintosh WP 2–4 document. */
+    if (buf[8] != WPD_PRODUCT ||
+        (buf[9] != WPD_TYPE_DOC && buf[9] != WPD_TYPE_MAC_DOC)) {
+        return -1;
+    }
+    enc = (uint16_t)buf[12] | ((uint16_t)buf[13] << 8);
+    if (enc) {
         return -1;
     }
 

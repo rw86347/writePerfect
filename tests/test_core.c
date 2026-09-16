@@ -160,6 +160,27 @@ static void test_reject_bad(void)
     doc_free(&d);
 }
 
+static void test_mac_wpd(void)
+{
+    Doc d;
+    const char *path = "tests/corpus/algeria3.wpd";
+    doc_init(&d);
+    expect(wpd_load(&d, path) == 0, "load Macintosh WP algeria3.wpd");
+    expect(d.len > 8, "mac doc has body");
+    {
+        int found = 0;
+        size_t i;
+        for (i = 0; i + 7 <= d.len; i++) {
+            if (memcmp(d.data + i, "Jaghbub", 7) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        expect(found, "algeria3 text Jaghbub");
+    }
+    doc_free(&d);
+}
+
 static void test_search_indent_merge_center(void)
 {
     Doc d;
@@ -402,6 +423,12 @@ static void test_export_and_wrap(void)
         expect(io_path_for_format("/tmp/doc.wpd", IO_FMT_DOCX, out, sizeof(out)) == 0,
                "rewrite wpd");
         expect(strcmp(out, "/tmp/doc.docx") == 0, "wpd stem becomes docx");
+        expect(io_format_from_path("/tmp/letter.wps") == IO_FMT_WPD, "wps is wp document");
+        expect(io_format_from_path("/tmp/LETTER.WPS") == IO_FMT_WPD, "WPS case");
+        expect(io_format_from_path("/tmp/memo.wp") == IO_FMT_WPD, "wp is wp document");
+        expect(io_path_for_format("/tmp/letter.wps", IO_FMT_WPD, out, sizeof(out)) == 0,
+               "rewrite wps");
+        expect(strcmp(out, "/tmp/letter.wpd") == 0, "wps stem becomes wpd");
     }
 }
 
@@ -834,6 +861,7 @@ int main(void)
     test_edit();
     test_file_roundtrip();
     test_reject_bad();
+    test_mac_wpd();
     test_search_indent_merge_center();
     test_utf8_and_specials();
     test_export_and_wrap();

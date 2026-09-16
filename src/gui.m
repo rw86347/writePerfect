@@ -40,6 +40,9 @@ static Screen Gscr;
 + (void)dismissSystemModalTouchBar:(NSTouchBar *)touchBar;
 @end
 
+@interface WPDocument : NSDocument
+@end
+
 @interface WPApp : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTouchBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSWindow *settings;
@@ -195,6 +198,17 @@ static void wp_reset_colors(void)
 static NSString *const kWPSchemesKey = @"wp.color.schemes";
 static NSString *const kWPSchemeNameKey = @"wp.color.schemeName";
 static NSString *const kWPBuiltinScheme = @"WP 5.1";
+static NSString *const kWPNightScheme = @"Night";
+
+/* Saved from the Night well set: near-black screen, green text, red bold. */
+static const CGFloat kWPColorNight[WPColorCount][3] = {
+    {0.000616, 0.003743, 0.025121},
+    {0.00, 1.00, 0.00},
+    {1.00, 0.121968, 0.00},
+    {0.40, 0.90, 0.95},
+    {0.00, 0.00, 0.00},
+    {0.976229, 0.987033, 0.998637}
+};
 static NSString *const kWPSaveFormatKey = @"wp.save.format";
 static NSString *const kWPWrapModeKey = @"wp.wrap.mode";
 static NSString *const kWPForceFkeysKey = @"wp.fkey.forceScreen";
@@ -360,6 +374,30 @@ static NSDictionary *wp_schemes(void)
     return [d isKindOfClass:[NSDictionary class]] ? d : @{};
 }
 
+static BOOL wp_is_builtin_scheme(NSString *name)
+{
+    return [name isEqualToString:kWPBuiltinScheme] || [name isEqualToString:kWPNightScheme];
+}
+
+static NSArray *wp_builtin_palette(NSString *name)
+{
+    const CGFloat (*src)[3] = NULL;
+    NSMutableArray *pal;
+    int i;
+    if (!name.length || [name isEqualToString:kWPBuiltinScheme]) {
+        src = kWPColorDefault;
+    } else if ([name isEqualToString:kWPNightScheme]) {
+        src = kWPColorNight;
+    } else {
+        return nil;
+    }
+    pal = [NSMutableArray arrayWithCapacity:WPColorCount];
+    for (i = 0; i < WPColorCount; i++) {
+        [pal addObject:@[ @(src[i][0]), @(src[i][1]), @(src[i][2]) ]];
+    }
+    return pal;
+}
+
 static NSString *wp_scheme_name(void)
 {
     NSString *n = [[NSUserDefaults standardUserDefaults] stringForKey:kWPSchemeNameKey];
@@ -368,10 +406,10 @@ static NSString *wp_scheme_name(void)
 
 static NSArray *wp_scheme_titles(void)
 {
-    NSMutableArray *names = [NSMutableArray arrayWithObject:kWPBuiltinScheme];
+    NSMutableArray *names = [NSMutableArray arrayWithObjects:kWPBuiltinScheme, kWPNightScheme, nil];
     NSArray *user = [[wp_schemes() allKeys] sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
     for (NSString *n in user) {
-        if (![n isEqualToString:kWPBuiltinScheme]) {
+        if (!wp_is_builtin_scheme(n)) {
             [names addObject:n];
         }
     }
@@ -380,16 +418,22 @@ static NSArray *wp_scheme_titles(void)
 
 static void wp_load_scheme(NSString *name)
 {
-    if (!name.length || [name isEqualToString:kWPBuiltinScheme]) {
-        wp_reset_colors();
-        [[NSUserDefaults standardUserDefaults] setObject:kWPBuiltinScheme forKey:kWPSchemeNameKey];
-        return;
+    NSArray *pal;
+    if (!name.length) {
+        name = kWPBuiltinScheme;
     }
-    NSArray *pal = wp_schemes()[name];
+    pal = wp_schemes()[name];
+    if (![pal isKindOfClass:[NSArray class]]) {
+        pal = wp_builtin_palette(name);
+    }
     if (![pal isKindOfClass:[NSArray class]]) {
         return;
     }
-    wp_apply_palette(pal);
+    if ([name isEqualToString:kWPBuiltinScheme] && !wp_schemes()[name]) {
+        wp_reset_colors();
+    } else {
+        wp_apply_palette(pal);
+    }
     [[NSUserDefaults standardUserDefaults] setObject:name forKey:kWPSchemeNameKey];
 }
 
@@ -411,7 +455,7 @@ static NSString *wp_save_scheme(NSString *name)
 
 static void wp_delete_scheme(NSString *name)
 {
-    if (!name.length || [name isEqualToString:kWPBuiltinScheme]) {
+    if (!name.length || wp_is_builtin_scheme(name)) {
         return;
     }
     NSMutableDictionary *d = [wp_schemes() mutableCopy];
@@ -794,7 +838,7 @@ static NSString *wp_suggested_save_name(void)
     NSString *name = Gdoc->path[0]
         ? [[NSString stringWithUTF8String:Gdoc->path] lastPathComponent]
         : @"document";
-    NSArray *exts = @[@"docx", @"md", @"markdown", @"pdf", @"wpd"];
+    NSArray *exts = @[@"docx", @"md", @"markdown", @"pdf", @"wpd", @"wps", @"wp", @"wkb"];
     NSString *e;
     for (e in exts) {
         NSString *suf = [@"." stringByAppendingString:e];
@@ -812,7 +856,7 @@ static NSArray<UTType *> *wp_doc_types(void)
     int pref = io_default_format();
     NSArray *exts = @[
         [NSString stringWithUTF8String:io_format_ext(pref)],
-        @"docx", @"md", @"pdf", @"wpd"
+        @"docx", @"md", @"pdf", @"wpd", @"wps", @"wp", @"wkb"
     ];
     NSString *e;
     NSMutableSet *seen = [NSMutableSet set];
@@ -835,6 +879,103 @@ static NSArray<UTType *> *wp_doc_types(void)
 
 static int gui_save_pdf_print(const char *path);
 
+static int gui_open_path(const char *path)
+{
+    if (!path || !path[0] || !Gdoc) {
+        return -1;
+    }
+    if (io_load(Gdoc, path) != 0) {
+        if (Gview) {
+            view_message(Gview, "ERROR: cannot open document");
+            gui_refresh();
+        }
+        return -1;
+    }
+    if (Gview) {
+        view_message(Gview, "Retrieved %s", path);
+        gui_refresh();
+    }
+    return 0;
+}
+
+static void wp_claim_document_types(void)
+{
+    NSURL *appURL = [[NSBundle mainBundle] bundleURL];
+    if (![appURL.pathExtension.lowercaseString isEqualToString:@"app"]) {
+        return;
+    }
+    if (@available(macOS 12.0, *)) {
+        NSArray<NSString *> *exts = @[ @"wpd" ];
+        NSString *ext;
+        for (ext in exts) {
+            UTType *t = [UTType typeWithFilenameExtension:ext];
+            if (!t) {
+                continue;
+            }
+            [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:appURL
+                                                  toOpenContentType:t
+                                                  completionHandler:^(NSError *err) {
+                                                      (void)err;
+                                                  }];
+        }
+        UTType *own = [UTType typeWithIdentifier:@"uk.wp51.document"];
+        if (own) {
+            [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:appURL
+                                                  toOpenContentType:own
+                                                  completionHandler:^(NSError *err) {
+                                                      (void)err;
+                                                  }];
+        }
+    }
+}
+
+@implementation WPDocument
+
+- (void)makeWindowControllers
+{
+}
+
++ (BOOL)autosavesInPlace
+{
+    return NO;
+}
+
+- (BOOL)readFromURL:(NSURL *)url ofType:(NSString *)typeName error:(NSError **)outError
+{
+    (void)typeName;
+    if (url.isFileURL && gui_open_path(url.fileSystemRepresentation) == 0) {
+        return YES;
+    }
+    if (outError) {
+        *outError = [NSError errorWithDomain:NSCocoaErrorDomain
+                                        code:NSFileReadCorruptFileError
+                                    userInfo:@{ NSLocalizedDescriptionKey: @"Cannot open WordPerfect document." }];
+    }
+    return NO;
+}
+
+- (BOOL)readFromData:(NSData *)data ofType:(NSString *)typeName error:(NSError **)outError
+{
+    (void)typeName;
+    if (!Gdoc || !data.length || wpd_decode(Gdoc, data.bytes, data.length) != 0) {
+        if (outError) {
+            *outError = [NSError errorWithDomain:NSCocoaErrorDomain
+                                            code:NSFileReadCorruptFileError
+                                        userInfo:@{ NSLocalizedDescriptionKey: @"Cannot open WordPerfect document." }];
+        }
+        return NO;
+    }
+    Gdoc->path[0] = 0;
+    Gdoc->dirty = 0;
+    if (Gview) {
+        view_message(Gview, "Retrieved document");
+        gui_refresh();
+    }
+    return YES;
+}
+
+@end
+
 static void gui_open(void)
 {
     NSOpenPanel *p = [NSOpenPanel openPanel];
@@ -845,13 +986,7 @@ static void gui_open(void)
     if ([p runModal] != NSModalResponseOK) {
         return;
     }
-    const char *path = p.URL.path.fileSystemRepresentation;
-    if (io_load(Gdoc, path) != 0) {
-        view_message(Gview, "ERROR: cannot open document");
-    } else {
-        view_message(Gview, "Retrieved %s", path);
-    }
-    gui_refresh();
+    gui_open_path(p.URL.path.fileSystemRepresentation);
 }
 
 static void gui_save_to(const char *path)
@@ -998,25 +1133,65 @@ static void gui_save(void)
     return YES;
 }
 
+typedef struct {
+    CGFloat ox;
+    CGFloat cw;
+    CGFloat ch;
+} GuiCrt;
+
+/* 80x25 at 4:3. Use the full window height; leftover width is split left/right. */
+static GuiCrt gui_crt_layout(NSRect bounds, int cols, int rows)
+{
+    GuiCrt m = {0, 6, 10};
+    CGFloat ch, cw, text_w, text_h, max_w;
+    if (cols < 1) {
+        cols = WP51_COLS;
+    }
+    if (rows < 1) {
+        rows = WP51_ROWS;
+    }
+    ch = floor(bounds.size.height / rows);
+    if (ch < 10) {
+        ch = 10;
+    }
+    text_h = ch * (CGFloat)rows;
+    text_w = floor(text_h * 4.0 / 3.0);
+    cw = floor(text_w / cols);
+    if (cw < 6) {
+        cw = 6;
+    }
+    text_w = cw * (CGFloat)cols;
+    max_w = bounds.size.width;
+    if (text_w > max_w) {
+        cw = floor(max_w / cols);
+        if (cw < 6) {
+            cw = 6;
+        }
+        text_w = cw * (CGFloat)cols;
+    }
+    m.cw = cw;
+    m.ch = ch;
+    m.ox = floor((max_w - text_w) / 2.0);
+    if (m.ox < 0) {
+        m.ox = 0;
+    }
+    return m;
+}
+
 static size_t gui_hit_pos(NSView *view, NSEvent *event)
 {
     NSRect bounds = view.bounds;
     NSPoint pt = [view convertPoint:event.locationInWindow fromView:nil];
     int cols = Gscr.cols > 0 ? Gscr.cols : WP51_COLS;
     int rows = Gscr.rows > 0 ? Gscr.rows : WP51_ROWS;
-    CGFloat cw = floor(bounds.size.width / cols);
-    CGFloat ch = floor(bounds.size.height / rows);
+    GuiCrt crt = gui_crt_layout(bounds, cols, rows);
+    CGFloat cw = crt.cw;
+    CGFloat ch = crt.ch;
     int col, row, line;
     int text_rows = 0;
     int reveal_y = 0;
     int reveal_rows = 0;
-    if (cw < 6) {
-        cw = 6;
-    }
-    if (ch < 10) {
-        ch = 10;
-    }
-    col = (int)(pt.x / cw);
+    col = (int)floor((pt.x - crt.ox) / cw);
     row = (int)((bounds.size.height - pt.y) / ch);
     if (col < 0) {
         col = 0;
@@ -1390,15 +1565,12 @@ static size_t gui_hit_pos(NSView *view, NSEvent *event)
     if (Gscr.cols <= 0 || Gscr.rows <= 0) {
         return [self.window convertRectToScreen:[self convertRect:self.bounds toView:nil]];
     }
-    cw = floor(bounds.size.width / Gscr.cols);
-    ch = floor(bounds.size.height / Gscr.rows);
-    if (cw < 6) {
-        cw = 6;
+    {
+        GuiCrt crt = gui_crt_layout(bounds, Gscr.cols, Gscr.rows);
+        cw = crt.cw;
+        ch = crt.ch;
+        x = crt.ox + Gscr.cx * cw;
     }
-    if (ch < 10) {
-        ch = 10;
-    }
-    x = Gscr.cx * cw;
     y = bounds.size.height - (Gscr.cy + 1) * ch;
     r = NSMakeRect(x, y, cw * 2, ch);
     return [self.window convertRectToScreen:[self convertRect:r toView:nil]];
@@ -1444,14 +1616,9 @@ static void gui_paint_screen(NSRect bounds, const Screen *scr, BOOL blinkOn)
     if (!scr || !scr->cells || scr->cols <= 0 || scr->rows <= 0) {
         return;
     }
-    CGFloat cw = floor(bounds.size.width / scr->cols);
-    CGFloat ch = floor(bounds.size.height / scr->rows);
-    if (cw < 6) {
-        cw = 6;
-    }
-    if (ch < 10) {
-        ch = 10;
-    }
+    GuiCrt crt = gui_crt_layout(bounds, scr->cols, scr->rows);
+    CGFloat cw = crt.cw;
+    CGFloat ch = crt.ch;
     NSFont *probe = [NSFont fontWithName:@"Menlo" size:12] ?: [NSFont userFixedPitchFontOfSize:12];
     NSSize em = [@"M" sizeWithAttributes:@{NSFontAttributeName: probe}];
     /* Fill the cell: Latin was sized to 92% of width and left-aligned, so it looked sparse. */
@@ -1490,7 +1657,7 @@ static void gui_paint_screen(NSRect bounds, const Screen *scr, BOOL blinkOn)
             unsigned a = cell.attr;
             int wide = cell.cp ? wp_cp_width(cell.cp) : 0;
             int cursor = scr->show_cursor && scr->cy == y && scr->cx == x && blinkOn;
-            NSRect r = NSMakeRect(x * cw, ypt, (wide > 1 ? 2 : 1) * cw, ch);
+            NSRect r = NSMakeRect(crt.ox + x * cw, ypt, (wide > 1 ? 2 : 1) * cw, ch);
             if (cell.cp == 0) {
                 continue;
             }
@@ -1854,8 +2021,9 @@ int gui_write_print_pdf(Doc *d, const char *path)
     }
     {
         NSRect bounds = self.bounds;
-        CGFloat cw = floor(bounds.size.width / Gscr.cols);
-        CGFloat ch = floor(bounds.size.height / Gscr.rows);
+        GuiCrt crt = gui_crt_layout(bounds, Gscr.cols, Gscr.rows);
+        CGFloat cw = crt.cw;
+        CGFloat ch = crt.ch;
         CGFloat top = bounds.size.height;
         const char *utf = self.markedText.UTF8String;
         const uint8_t *p = (const uint8_t *)utf;
@@ -1867,12 +2035,6 @@ int gui_write_print_pdf(Doc *d, const char *path)
         NSFont *font = [NSFont fontWithName:@"Menlo" size:12] ?: [NSFont userFixedPitchFontOfSize:12];
         NSMutableParagraphStyle *para = [[NSMutableParagraphStyle alloc] init];
         para.lineBreakMode = NSLineBreakByClipping;
-        if (cw < 6) {
-            cw = 6;
-        }
-        if (ch < 10) {
-            ch = 10;
-        }
         while (left && mx < Gscr.cols) {
             uint32_t cp;
             size_t u = wp_utf8_decode(p, left, &cp);
@@ -1889,7 +2051,7 @@ int gui_write_print_pdf(Doc *d, const char *path)
             }
             en = wp_utf8_encode(cp, enc);
             str = [[NSString alloc] initWithBytes:enc length:en encoding:NSUTF8StringEncoding];
-            r = NSMakeRect(mx * cw, top - (my + 1) * ch, w * cw, ch);
+            r = NSMakeRect(crt.ox + mx * cw, top - (my + 1) * ch, w * cw, ch);
             [blue setFill];
             NSRectFill(r);
             [str drawWithRect:r
@@ -2384,7 +2546,7 @@ int gui_write_print_pdf(Doc *d, const char *path)
 {
     (void)sender;
     NSString *name = self.schemePop.titleOfSelectedItem;
-    if (!name.length || [name isEqualToString:kWPBuiltinScheme]) {
+    if (!name.length || wp_is_builtin_scheme(name)) {
         return;
     }
     wp_delete_scheme(name);
@@ -2404,11 +2566,12 @@ int gui_write_print_pdf(Doc *d, const char *path)
     NSMenu *menu = [self buildMenu];
     [NSApp setMainMenu:menu];
 
-    NSRect frame = NSMakeRect(80, 80, 80 * 10 + 16, 25 * 18 + 8);
+    NSRect vis = [NSScreen mainScreen].visibleFrame;
+    NSRect frame = NSIsEmptyRect(vis) ? NSMakeRect(80, 80, 80 * 10 + 16, 25 * 18 + 8) : vis;
     NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable |
                        NSWindowStyleMaskUnifiedTitleAndToolbar;
-    self.window = [[NSWindow alloc] initWithContentRect:frame
+    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 800, 600)
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
@@ -2416,6 +2579,12 @@ int gui_write_print_pdf(Doc *d, const char *path)
     self.window.delegate = self;
     self.window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
     self.window.minSize = NSMakeSize(640, 400);
+    [self.window setFrame:frame display:NO];
+    {
+        NSRect content = [self.window contentRectForFrameRect:self.window.frame];
+        content.origin = NSZeroPoint;
+        frame = content;
+    }
 
     self.strip = [[FKeyStripView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, 44)];
     self.strip.translatesAutoresizingMaskIntoConstraints = YES;
@@ -2441,12 +2610,12 @@ int gui_write_print_pdf(Doc *d, const char *path)
         self.window.touchBar = bar;
         self.docView.touchBar = bar;
     }
-    [self.window center];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.docView];
     [NSApp activateIgnoringOtherApps:YES];
     [self applyFKeyPlacement];
     [self showKeyboardStrip];
+    wp_claim_document_types();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(400 * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(), ^{
                        [self showKeyboardStrip];
@@ -2560,6 +2729,39 @@ static BOOL g_tb_modal;
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
 {
     (void)app;
+    return YES;
+}
+
+- (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename
+{
+    (void)sender;
+    return gui_open_path(filename.fileSystemRepresentation) == 0;
+}
+
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls
+{
+    (void)application;
+    NSURL *u;
+    for (u in urls) {
+        if (u.isFileURL) {
+            gui_open_path(u.path.fileSystemRepresentation);
+            break;
+        }
+    }
+}
+
+- (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender
+{
+    (void)sender;
+    return NO;
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag
+{
+    (void)sender;
+    if (!flag) {
+        [self.window makeKeyAndOrderFront:nil];
+    }
     return YES;
 }
 
@@ -2721,6 +2923,7 @@ int gui_run(App *a, Doc *d, View *v)
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [[NSProcessInfo processInfo] setProcessName:@"WordPerfect"];
     wp_register_color_defaults();
+    wp_load_scheme(wp_scheme_name());
     wp_apply_io_prefs();
     {
         NSString *icns = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];

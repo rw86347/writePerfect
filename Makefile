@@ -22,14 +22,21 @@ app: wp
 	cp macos/Info.plist WordPerfect.app/Contents/Info.plist
 	cp macos/AppIcon.icns WordPerfect.app/Contents/Resources/AppIcon.icns
 
+LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
 install: app
 	ditto WordPerfect.app /Applications/WordPerfect.app
+	$(LSREGISTER) -f /Applications/WordPerfect.app
 
 tests/test_core: tests/test_core.c src/doc.c src/wpd.c src/iofmt.c src/view.c src/screen.c src/font.c src/doc.h src/wpd.h src/wp51.h src/iofmt.h src/view.h src/font.h
 	$(CC) $(CFLAGS) -o tests/test_core tests/test_core.c src/doc.c src/wpd.c src/iofmt.c src/view.c src/screen.c src/font.c $(NCURSES)
 
-test: tests/test_core wp
+tests/test_corpus: tests/test_corpus.c src/doc.c src/wpd.c src/iofmt.c src/view.c src/screen.c src/font.c src/doc.h src/wpd.h src/wp51.h src/iofmt.h src/view.h src/font.h
+	$(CC) $(CFLAGS) -o tests/test_corpus tests/test_corpus.c src/doc.c src/wpd.c src/iofmt.c src/view.c src/screen.c src/font.c $(NCURSES)
+
+test: tests/test_core tests/test_corpus wp
 	./tests/test_core
+	./tests/test_corpus
 	mkdir -p tests/out
 	rm -f tests/out/ui.wpd
 	./wp --script tests/flow.script
@@ -57,5 +64,5 @@ test: tests/test_core wp
 	./wp --help 2>&1 | grep -q -- --agent
 
 clean:
-	rm -f wp tests/test_core src/gui.o
+	rm -f wp tests/test_core tests/test_corpus src/gui.o
 	rm -rf tests/out WordPerfect.app

@@ -66,7 +66,8 @@ int io_format_from_path(const char *path)
     if (!strcasecmp(e, "pdf")) {
         return IO_FMT_PDF;
     }
-    if (!strcasecmp(e, "wpd")) {
+    if (!strcasecmp(e, "wpd") || !strcasecmp(e, "wps") || !strcasecmp(e, "wp") ||
+        !strcasecmp(e, "wkb")) {
         return IO_FMT_WPD;
     }
     return -1;

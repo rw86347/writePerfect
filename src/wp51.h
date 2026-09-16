@@ -14,6 +14,7 @@
 #define WPD_MAGIC "\xFFWPC"
 #define WPD_PRODUCT 1
 #define WPD_TYPE_DOC 0x0A
+#define WPD_TYPE_MAC_DOC 0x2C /* Macintosh WP 2.x–4.x */
 #define WPD_MAJOR 0
 #define WPD_MINOR 1
 
